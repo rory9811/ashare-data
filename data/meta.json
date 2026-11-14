@@ -1,0 +1,91 @@
+{
+  "source": "baostock，前复权日线",
+  "run_started_utc": "2026-11-14T09:01:43+00:00",
+  "run_finished_utc": "2026-11-14T11:20:30+00:00",
+  "trade_day": "2026-11-13",
+  "instruments": 7512,
+  "ok": 7456,
+  "failed": 56,
+  "failed_sample": [
+    {
+      "code": "sh.000999",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399332",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399427",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399904",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399907",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399908",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399909",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399910",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399911",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399912",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399915",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399916",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399917",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399918",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399919",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399920",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399922",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399923",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399925",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399926",
+      "error": "empty"
+    }
+  ]
+}
