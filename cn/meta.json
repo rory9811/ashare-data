@@ -1,0 +1,248 @@
+{
+  "market": "cn",
+  "source": "baostock，前复权日线",
+  "benchmark": "000300.SH",
+  "run_started_utc": "2026-11-21T14:43:03+00:00",
+  "run_finished_utc": "2026-11-21T15:47:45+00:00",
+  "trade_day": "2026-11-20",
+  "instruments": 7515,
+  "ok": 7459,
+  "failed": 56,
+  "failed_sample": [
+    {
+      "code": "sz.399907",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399919",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399927",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399939",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399946",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399952",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399908",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399920",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399941",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399947",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399953",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399960",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399977",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399909",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399915",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399922",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399929",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399942",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399948",
+      "error": "empty"
+    },
+    {
+      "code": "sz.399954",
+      "error": "empty"
+    }
+  ],
+  "etf_splits_adjusted": 105,
+  "etf_split_sample": [
+    {
+      "code": "159220.SZ",
+      "dates": [
+        "2025-11-10"
+      ]
+    },
+    {
+      "code": "159231.SZ",
+      "dates": [
+        "2025-08-11"
+      ]
+    },
+    {
+      "code": "159246.SZ",
+      "dates": [
+        "2026-02-13"
+      ]
+    },
+    {
+      "code": "159305.SZ",
+      "dates": [
+        "2026-05-21"
+      ]
+    },
+    {
+      "code": "159320.SZ",
+      "dates": [
+        "2026-07-15"
+      ]
+    },
+    {
+      "code": "159325.SZ",
+      "dates": [
+        "2026-09-14"
+      ]
+    },
+    {
+      "code": "159327.SZ",
+      "dates": [
+        "2026-07-20"
+      ]
+    },
+    {
+      "code": "159363.SZ",
+      "dates": [
+        "2025-07-21"
+      ]
+    },
+    {
+      "code": "159368.SZ",
+      "dates": [
+        "2026-07-07"
+      ]
+    },
+    {
+      "code": "159375.SZ",
+      "dates": [
+        "2026-06-26"
+      ]
+    },
+    {
+      "code": "159381.SZ",
+      "dates": [
+        "2026-06-03"
+      ]
+    },
+    {
+      "code": "159387.SZ",
+      "dates": [
+        "2026-03-30"
+      ]
+    },
+    {
+      "code": "159388.SZ",
+      "dates": [
+        "2026-01-26"
+      ]
+    },
+    {
+      "code": "159393.SZ",
+      "dates": [
+        "2025-03-31"
+      ]
+    },
+    {
+      "code": "159507.SZ",
+      "dates": [
+        "2026-06-09"
+      ]
+    },
+    {
+      "code": "159516.SZ",
+      "dates": [
+        "2026-03-30",
+        "2026-07-10"
+      ]
+    },
+    {
+      "code": "159527.SZ",
+      "dates": [
+        "2026-07-22"
+      ]
+    },
+    {
+      "code": "159537.SZ",
+      "dates": [
+        "2026-06-26"
+      ]
+    },
+    {
+      "code": "159538.SZ",
+      "dates": [
+        "2026-07-17"
+      ]
+    },
+    {
+      "code": "159546.SZ",
+      "dates": [
+        "2026-06-10"
+      ]
+    }
+  ],
+  "shards": 6,
+  "columns": [
+    "code",
+    "name",
+    "kind",
+    "date",
+    "close",
+    "ma50",
+    "ma200",
+    "trend",
+    "chg_1w",
+    "chg_4w",
+    "chg_13w",
+    "rel_1w",
+    "rel_4w",
+    "rel_13w",
+    "high_250",
+    "pct_from_high",
+    "amt_20d",
+    "amt_pct"
+  ],
+  "history_weeks": 104,
+  "history_format": "ohlcv-weekly-104",
+  "ohlcv_fields": [
+    "week",
+    "open",
+    "high",
+    "low",
+    "close",
+    "amount"
+  ]
+}
