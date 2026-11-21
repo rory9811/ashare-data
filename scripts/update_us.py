@@ -95,9 +95,9 @@ def _series(df, ticker):
     return s if len(s) else None
 
 
-def fetch(tickers):
-    """返回 {代码: (日期列表, 收盘价列表)}，日期升序；整块失败时重试两次。"""
-    for attempt in range(3):
+def fetch(tickers, tries=3):
+    """返回 {代码: (日期列表, 收盘价列表)}，日期升序；整块失败时重试。"""
+    for attempt in range(tries):
         try:
             df = yf.download(tickers, period="2y", interval="1d", auto_adjust=True,
                              group_by="ticker", threads=True, progress=False)
@@ -110,7 +110,7 @@ def fetch(tickers):
             s = _series(df, t)
             if s is not None:
                 out[t] = ([d.strftime("%Y-%m-%d") for d in s.index], [float(x) for x in s.values])
-        if out or attempt == 2:
+        if out or attempt == tries - 1:
             return out
         time.sleep(30 * (attempt + 1))
     return {}
@@ -121,6 +121,26 @@ def drop_unfinished_bar(dates, closes, now_ny):
     if dates and dates[-1] == now_ny.date().isoformat() and now_ny.time() < dt.time(16, 30):
         return dates[:-1], closes[:-1]
     return dates, closes
+
+
+def refetch_stale(rows, history, universe, trade_day, now_ny, limit=200):
+    """批量下载偶尔漏掉个别代码的最后几根日线（例如拆股当天），逐个重取一次。
+    返回重取后仍然停在 trade_day 之前的代码和日期，写进 meta 供账本查对。"""
+    pos = {r["code"]: k for k, r in enumerate(rows)}
+    info = {sym: (name, kind) for sym, name, kind in universe}
+    stale = [r["code"] for r in rows if r["date"] < trade_day and r["code"] in info]
+    for sym in stale[:limit]:
+        got = fetch([sym], tries=1).get(sym)
+        if not got:
+            continue
+        dates, closes = drop_unfinished_bar(*got, now_ny)
+        if closes and dates[-1] > rows[pos[sym]]["date"]:
+            name, kind = info[sym]
+            rows[pos[sym]] = summarize(sym, name, kind, dates, closes)
+            history[sym] = weekly_closes(dates, closes)
+    left = {r["code"]: r["date"] for r in rows if r["date"] < trade_day and r["code"] in info}
+    print(f"stale before refetch {len(stale)}, after {len(left)}", flush=True)
+    return left
 
 
 def main():
@@ -153,6 +173,8 @@ def main():
         print(f"{min(i + CHUNK, len(universe))}/{len(universe)}, ok {len(rows)}", flush=True)
         time.sleep(1)
 
+    stale = refetch_stale(rows, history, universe, trade_day, now_ny)
+
     has_bench = add_relative(rows, BENCH)
     write_outputs(OUT_DIR, rows, {
         "market": "us",
@@ -165,6 +187,7 @@ def main():
         "ok": len(rows),
         "failed": len(failures),
         "failed_sample": failures[:20],
+        "stale": stale,
     }, history)
     if not rows or len(rows) < 0.8 * len(universe):
         raise SystemExit("too many failures")
