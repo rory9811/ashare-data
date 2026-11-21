@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-from common import add_relative, already_done, summarize, weekly_bars, write_outputs
+from common import add_liquidity_rank, add_relative, already_done, summarize, weekly_bars, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "us")
@@ -149,7 +149,7 @@ def refetch_stale(rows, history, universe, trade_day, now_ny, limit=200):
         bars = drop_unfinished_bar(got, now_ny)
         if bars["closes"] and bars["dates"][-1] > rows[pos[sym]]["date"]:
             name, kind = info[sym]
-            rows[pos[sym]] = summarize(sym, name, kind, bars["dates"], bars["closes"])
+            rows[pos[sym]] = summarize(sym, name, kind, bars["dates"], bars["closes"], bars["amounts"])
             history[sym] = weekly_bars(**bars)
     left = {r["code"]: r["date"] for r in rows if r["date"] < trade_day and r["code"] in info}
     print(f"stale before refetch {len(stale)}, after {len(left)}", flush=True)
@@ -181,7 +181,7 @@ def main():
             if not bars["closes"]:
                 failures.append({"code": sym, "error": "no finished bar"})
                 continue
-            rows.append(summarize(sym, name, kind, bars["dates"], bars["closes"]))
+            rows.append(summarize(sym, name, kind, bars["dates"], bars["closes"], bars["amounts"]))
             history[sym] = weekly_bars(**bars)
         print(f"{min(i + CHUNK, len(universe))}/{len(universe)}, ok {len(rows)}", flush=True)
         time.sleep(1)
@@ -189,6 +189,7 @@ def main():
     stale = refetch_stale(rows, history, universe, trade_day, now_ny)
 
     has_bench = add_relative(rows, BENCH)
+    add_liquidity_rank(rows)
     write_outputs(OUT_DIR, rows, {
         "market": "us",
         "source": "Yahoo Finance（yfinance），复权日线",

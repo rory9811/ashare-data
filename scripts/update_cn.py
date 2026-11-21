@@ -24,7 +24,7 @@ import time
 
 import baostock as bs
 
-from common import add_relative, already_done, summarize, weekly_bars, write_outputs
+from common import add_liquidity_rank, add_relative, already_done, summarize, weekly_bars, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "cn")
@@ -133,7 +133,7 @@ def fetch(shard, of, trade_day):
                 failures.append({"code": code, "error": err or "empty"})
             else:
                 shown = to_display_code(code)
-                rows.append(summarize(shown, name, kind, bars["dates"], bars["closes"]))
+                rows.append(summarize(shown, name, kind, bars["dates"], bars["closes"], bars["amounts"]))
                 history[shown] = weekly_bars(**bars)
             if i % 200 == 0:
                 print(f"{i}/{len(part)}", flush=True)
@@ -164,6 +164,7 @@ def merge(of):
     history = {c: b for p in parts for c, b in p["history"].items()}
     failures = [f for p in parts for f in p["failures"]]
     has_bench = add_relative(rows, BENCH)
+    add_liquidity_rank(rows)
     write_outputs(OUT_DIR, rows, {
         "market": "cn",
         "source": "baostock，前复权日线",

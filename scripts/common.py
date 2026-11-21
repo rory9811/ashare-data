@@ -17,6 +17,9 @@
 另外三种在 200 日均线之下，归"下跌一边"。
 涨跌幅按交易日算：1 周 = 5 个、4 周 = 20 个、13 周 = 60 个交易日。
 相对大盘 = 同期涨跌幅 − 基准（美股 SPY，A 股沪深 300）的同期涨跌幅，单位是百分点。
+流动性：amt_20d 是近 20 个交易日的日均成交额（当地货币）；amt_pct 是它在本市场全部股票里的
+分位（0–100，越大越活跃，只给股票算，ETF、指数、期货留空）。账本规定代表股要在前一半（≥50），
+因为成交稀少的股票价格噪音大、数据也最容易缺失；用分位而不用固定金额，是为了不随市场冷热失效。
 
 另出两年周线，供画图和读价格结构：
   history_w.csv     每行一个代码，每列一周，值是那一周最后一个交易日的复权收盘价，
@@ -36,7 +39,7 @@ import shutil
 
 FIELDS = ["code", "name", "kind", "date", "close", "ma50", "ma200", "trend",
           "chg_1w", "chg_4w", "chg_13w", "rel_1w", "rel_4w", "rel_13w",
-          "high_250", "pct_from_high"]
+          "high_250", "pct_from_high", "amt_20d", "amt_pct"]
 WINDOWS = {"1w": 5, "4w": 20, "13w": 60}
 HISTORY_WEEKS = 104
 
@@ -64,9 +67,10 @@ def _r(x, nd=2):
     return "" if x is None else round(x, nd)
 
 
-def summarize(code, name, kind, dates, closes):
-    """dates、closes 按日期升序。返回一行（dict），相对大盘的列先留空。"""
+def summarize(code, name, kind, dates, closes, amounts=None):
+    """dates、closes、amounts（每日成交额）按日期升序。返回一行（dict），相对大盘和流动性分位先留空。"""
     close = closes[-1]
+    recent = [a for a in (amounts or [])[-20:] if a]
     ma50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
     ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
     high = max(closes[-250:])
@@ -76,6 +80,8 @@ def summarize(code, name, kind, dates, closes):
         "trend": direction(close, ma50, ma200),
         "high_250": _r(high, 4),
         "pct_from_high": _r((close / high - 1) * 100 if high else None),
+        "amt_20d": round(sum(recent) / len(recent)) if recent else "",
+        "amt_pct": "",
     }
     for key, n in WINDOWS.items():
         row[f"chg_{key}"] = _r(change(closes, n))
@@ -123,6 +129,14 @@ def add_relative(rows, bench_code):
             a, b = r[f"chg_{key}"], bench[f"chg_{key}"]
             r[f"rel_{key}"] = "" if a == "" or b == "" else round(a - b, 2)
     return True
+
+
+def add_liquidity_rank(rows, kind="股票"):
+    """给股票算日均成交额在全部股票里的分位（0–100）。"""
+    ranked = sorted((r for r in rows if r["kind"] == kind and r["amt_20d"] != ""), key=lambda r: r["amt_20d"])
+    n = len(ranked)
+    for i, r in enumerate(ranked):
+        r["amt_pct"] = round(100 * i / (n - 1)) if n > 1 else 100
 
 
 def read_meta(out_dir):
