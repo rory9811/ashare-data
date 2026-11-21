@@ -1,6 +1,7 @@
 """A 股：每周更新全部股票、ETF 和指数的均线、方向、涨跌幅和相对沪深 300 强弱，以及两年周线。
 
-数据源：baostock（免费、无需注册），前复权日线。
+数据源：baostock（免费、无需注册），前复权日线。baostock 不处理 ETF 的份额拆分，这里按价格跳变识别并折算
+（见 adjust_etf_splits），处理过的 ETF 记在 meta.json 的 etf_splits_adjusted 和 etf_split_sample。
 输出：data/cn/ma_latest.csv、history_w.csv、ohlcv/<代码>.csv、meta.json（列见 common.py 和 README）。
 
 六千多个代码逐个查询，一台机器要三四个小时，所以分三步，由工作流把中间一步并行：
@@ -32,6 +33,9 @@ SHARD_DIR = os.path.join(ROOT, "shards")
 BENCH = "000300.SH"
 KEEP_TYPES = {"1": "股票", "2": "指数", "5": "ETF"}
 LOOKBACK_CALENDAR_DAYS = 760  # 两年多一点：够画 104 周走势，也够算 200 日均线和 250 日高点
+# A 股 ETF 单日涨跌幅最多 20%（多数是 10%），收盘价一天之内变成前一天的 1.35 倍以上或 1/1.35 以下，
+# 只可能是份额拆分或合并。baostock 的前复权只处理股票的送转和分红，不处理 ETF 的拆分。
+ETF_SPLIT_JUMP = 1.35
 
 
 def to_display_code(bs_code):
@@ -82,6 +86,26 @@ def fetch_bars(code, start, end):
     return cols, None
 
 
+def adjust_etf_splits(bars):
+    """把 ETF 份额拆分（或合并）之前的开高低收按拆分比例折算，效果等同前复权；成交额不受拆分影响，不改。
+    比例用拆分当天的开盘价 ÷ 前一天收盘价估计：开盘价已经按新份额计价，和真实比例只差隔夜涨跌，通常不到 1%。
+    返回发生拆分的日期列表。"""
+    closes, opens = bars["closes"], bars["opens"]
+    split_days = []
+    for i in range(1, len(closes)):
+        jump = closes[i] / closes[i - 1]
+        if 1 / ETF_SPLIT_JUMP <= jump <= ETF_SPLIT_JUMP:
+            continue
+        factor = (opens[i] or closes[i]) / closes[i - 1]
+        for key in ("opens", "highs", "lows", "closes"):
+            series = bars[key]
+            for j in range(i):
+                if series[j] is not None:
+                    series[j] *= factor
+        split_days.append(bars["dates"][i])
+    return split_days
+
+
 def day_loaded(trade_day):
     """用上证指数探一下：最新交易日的日线是否已经入库。"""
     bars, err = fetch_bars("sh.000001", trade_day, trade_day)
@@ -126,13 +150,17 @@ def fetch(shard, of, trade_day):
         universe = fetch_universe()
         part = universe[shard::of]
         print(f"trade day {trade_day}, shard {shard}/{of}: {len(part)} of {len(universe)} instruments", flush=True)
-        rows, history, failures = [], {}, []
+        rows, history, failures, splits = [], {}, [], []
         for i, (code, name, kind) in enumerate(part, 1):
             bars, err = fetch_bars(code, start, trade_day)
             if err or not bars["closes"]:
                 failures.append({"code": code, "error": err or "empty"})
             else:
                 shown = to_display_code(code)
+                if kind == "ETF":
+                    days = adjust_etf_splits(bars)
+                    if days:
+                        splits.append({"code": shown, "dates": days})
                 rows.append(summarize(shown, name, kind, bars["dates"], bars["closes"], bars["amounts"]))
                 history[shown] = weekly_bars(**bars)
             if i % 200 == 0:
@@ -143,7 +171,7 @@ def fetch(shard, of, trade_day):
     with open(os.path.join(SHARD_DIR, f"cn-{shard}.json"), "w", encoding="utf-8") as f:
         json.dump({"shard": shard, "of": of, "trade_day": trade_day, "universe": len(universe),
                    "part": len(part), "started": started, "rows": rows, "history": history,
-                   "failures": failures}, f, ensure_ascii=False)
+                   "failures": failures, "etf_splits": splits}, f, ensure_ascii=False)
 
 
 def merge(of):
@@ -163,6 +191,7 @@ def merge(of):
     rows = [r for p in parts for r in p["rows"]]
     history = {c: b for p in parts for c, b in p["history"].items()}
     failures = [f for p in parts for f in p["failures"]]
+    splits = sorted((s for p in parts for s in p.get("etf_splits", [])), key=lambda s: s["code"])
     has_bench = add_relative(rows, BENCH)
     add_liquidity_rank(rows)
     write_outputs(OUT_DIR, rows, {
@@ -176,6 +205,8 @@ def merge(of):
         "ok": len(rows),
         "failed": len(failures),
         "failed_sample": failures[:20],
+        "etf_splits_adjusted": len(splits),
+        "etf_split_sample": splits[:20],
         "shards": of,
     }, history)
     if not rows or len(rows) < 0.8 * universe:

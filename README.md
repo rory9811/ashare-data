@@ -10,6 +10,8 @@
 | A 股 | `data-cn` 分支：`cn/ma_latest.csv`、`cn/history_w.csv`、`cn/ohlcv/<代码>.csv`、`cn/meta.json` | baostock，前复权日线 | 全部 A 股、ETF、指数 | 沪深 300（000300.SH） | 周五 18:23，周六 03:17 补跑 |
 | 美股 | `data-us` 分支：`us/ma_latest.csv`、`us/history_w.csv`、`us/ohlcv/<代码>.csv`、`us/meta.json` | Yahoo Finance（yfinance），复权日线 | 全部在美上市股票（含 ADR）和 ETF，加主要指数、VIX、10 年期美债收益率、原油、天然气、黄金、白银、铜期货、美元指数 | SPY | 周六 06:13，09:43 补跑 |
 
+baostock 的前复权只处理股票的送转和分红，不处理 ETF 的份额拆分（拆分当天价格会跳到原来的几分之一）。A 股 ETF 单日涨跌幅最多 20%，所以收盘价一天之内变成前一天的 1.35 倍以上或 1/1.35 以下的，按拆分处理：拆分前的开高低收乘以“拆分当天开盘价 ÷ 前一天收盘价”，成交额不变。处理过的 ETF 和日期记在 `meta.json` 的 `etf_splits_adjusted`（个数）和 `etf_split_sample`（前 20 个）。
+
 美股批量下载偶尔漏掉个别代码的最后几根日线（例如拆股当天），程序会逐个重取一次；仍然停在最新交易日之前的代码和日期写在 `meta.json` 的 `stale` 里，账本引用这些代码时要注明数据日期并另行核对。
 
 GitHub 的定时任务常常排队晚几个小时，所以每个市场排两次。第二次发现数据已经覆盖最新交易日就直接跳过；A 股当天日线还没入库时也跳过，留给下一次。手动运行（Actions 页面 Run workflow）或改了代码触发的运行总是重新计算。
