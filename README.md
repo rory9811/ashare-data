@@ -52,7 +52,7 @@ curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/scripts/the
 python3 -I theme_chart.py --market us --history history_w.csv --codes MU,WDC,STX --out storage
 ```
 
-得到 `storage.png`（给模型看：上图是走势，起点记为 100；下图是相对基准的强弱；纵轴都是对数刻度，同样的高度代表同样的涨跌幅度）、`storage.widget.txt`（账本文档里图表组件的代码）和打印出来的数字摘要（区间涨跌、两年内高点和日期、距高点回撤、相对基准）。图只用来看形状，数字以摘要和 `ma_latest.csv` 为准。
+得到 `storage.png`（给模型看：上图是走势，起点记为 100；下图是相对基准的强弱；纵轴都是对数刻度，同样的高度代表同样的涨跌幅度）、`storage.widget.txt`（账本文档里图表组件的代码）和打印出来的数字摘要（区间涨跌、两年内高点和日期、距高点回撤、相对基准），以及“涨势体质”：两年涨幅、加速度、波动变化、上涨周占比，和主题是否达到急涨门槛（两年涨幅 ≥100% 且超出基准 ≥100 个百分点，取自 Greenwood、Shleifer、You 2019 对行业泡沫的研究）。图只用来看形状，数字以摘要和 `ma_latest.csv` 为准。
 
 ## 代码
 

@@ -8,7 +8,9 @@
                     纵轴用对数刻度：同样的高度代表同样的涨跌幅度（100→200 和
                     1000→2000 一样高），涨了几十倍的股票也不会把别的线压扁。
   <out>.widget.txt  账本文档里图表组件的完整代码（数据已内嵌，隔周取一个点）。
-  标准输出          数字摘要：区间涨跌、两年内最高点和日期、距最高点回撤、相对基准。
+  标准输出          数字摘要：区间涨跌、两年内最高点和日期、距最高点回撤、相对基准；
+                    以及“涨势体质”：两年涨幅、加速度、波动变化、上涨周占比和急涨门槛
+                    （定义和出处见 path_stats、heat 两个函数的说明）。
 图只用来看形状；写进账本的数字一律取自摘要或 ma_latest.csv，不从图上读。
 
 用法：
@@ -54,6 +56,73 @@ def rebase(vals, start):
         # 停牌等缺口沿用上一周的值，避免折线断开时误读成跳涨跳跌
         last = v if v is not None else last
         out.append(None if last is None else last / base * 100)
+    return out
+
+
+def _vol(vals):
+    """一段周收盘价的年化波动率（%），数据不够返回 None。"""
+    rets = [math.log(b / a) for a, b in zip(vals, vals[1:]) if a and b]
+    if len(rets) < 26:
+        return None
+    m = sum(rets) / len(rets)
+    return math.sqrt(sum((r - m) ** 2 for r in rets) / (len(rets) - 1)) * math.sqrt(52) * 100
+
+
+def path_stats(vals):
+    """用完整的两年周线（不重设起点）算涨势的“体质”，对应研究里的几个量：
+    两年涨幅、前一年和近一年各自的涨幅、加速度（两年涨幅减前一年涨幅，
+    Greenwood-Shleifer-You 2019 的定义）、近一年波动率比前一年的变化、
+    近一年上涨周的占比（涨得是否是一小步一小步的，对应 Da-Gurun-Warachka 2014）。"""
+    if len(vals) < 104 or vals[0] is None or vals[-53] is None or vals[-1] is None:
+        return None
+    v2, v1, v0 = vals[0], vals[-53], vals[-1]
+    first, recent, two = v1 / v2 - 1, v0 / v1 - 1, v0 / v2 - 1
+    last52 = [v for v in vals[-53:] if v]
+    prev52 = [v for v in vals[:52] if v]
+    ups = [b > a for a, b in zip(last52, last52[1:])]
+    vol_now, vol_prev = _vol(last52), _vol(prev52)
+    return {
+        "two": two, "first": first, "recent": recent, "accel": two - first,
+        "vol_now": vol_now, "vol_change": None if vol_now is None or vol_prev is None else vol_now - vol_prev,
+        "up_share": sum(ups) / len(ups) if ups else None,
+    }
+
+
+def heat(codes, bench, raw):
+    """主题层面（各代表股等权平均）的急涨检查，加上每只代表股的同一组数。
+    急涨门槛照搬 Greenwood-Shleifer-You：两年涨幅 ≥100% 且超出大盘 ≥100 个百分点。
+    原研究用的是整个行业的市值加权组合，这里只有 2 到 4 只代表股，只能当参考。"""
+    b = path_stats(raw[bench])
+    rows, stats = [], []
+    for c in codes:
+        st = path_stats(raw[c])
+        if st is None:
+            rows.append({"代码": c, "说明": "不足两年周线，不算"})
+            continue
+        stats.append(st)
+        rows.append({
+            "代码": c,
+            "两年涨幅%": round(st["two"] * 100),
+            "前一年涨幅%": round(st["first"] * 100),
+            "近一年涨幅%": round(st["recent"] * 100),
+            "加速度": round(st["accel"], 2),
+            "近一年年化波动%": None if st["vol_now"] is None else round(st["vol_now"]),
+            "波动变化（百分点）": None if st["vol_change"] is None else round(st["vol_change"]),
+            "近一年上涨周占比%": None if st["up_share"] is None else round(st["up_share"] * 100),
+        })
+    out = {"各代码": rows}
+    if stats and b:
+        avg = lambda k: sum(st[k] for st in stats) / len(stats)
+        two, net = avg("two"), avg("two") - b["two"]
+        vc = [st["vol_change"] for st in stats if st["vol_change"] is not None]
+        out["主题（等权）"] = {
+            "两年涨幅%": round(two * 100),
+            "两年超出基准（百分点）": round(net * 100),
+            "加速度": round(avg("accel"), 2),
+            "波动变化（百分点）": round(sum(vc) / len(vc)) if vc else None,
+            "达到急涨门槛": two >= 1 and net >= 1,
+        }
+        out["基准两年涨幅%"] = round(b["two"] * 100)
     return out
 
 
@@ -267,6 +336,7 @@ def main():
         "说明": notes,
         "各代码": [summary(c, weeks, idx[c], idx[bench] if c != bench else None) for c in codes]
                  + [summary(bench, weeks, idx[bench], None)],
+        "涨势体质（两年完整周线）": heat(codes, bench, found),
         "文件": [args.out + ".png", args.out + ".widget.txt"],
     }, ensure_ascii=False, indent=1))
 
