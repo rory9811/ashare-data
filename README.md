@@ -1,37 +1,44 @@
 # ashare-data
 
-每周五傍晚自动更新的 A 股均线表，供《A股主题账本》每周体检读取价格趋势。
+每周自动计算的 A 股和美股行情表，供《A股主题账本》《美股主题账本》每周体检读取价格。
+所有数字都由程序从复权收盘价算出，账本只引用，不手算。（仓库名沿用最初的 A 股版本，现在两个市场都在这里。）
 
-- 数据源：baostock，前复权日线，免费、无需注册
-- 运行：GitHub Actions，北京时间周五 18:23 一次、周六 03:17 补一次（GitHub 定时常排队晚几个小时）。当天日线 baostock 还没入库就跳过，留给下一次；已是最新就不重复计算。也可以在 Actions 页面手动运行，手动运行总是重新计算
-- 输出：
-  - `data/ma_latest.csv`：每只股票、ETF、指数一行
-  - `data/meta.json`：本次运行的交易日、成功和失败数量
+| 市场 | 文件 | 数据源 | 证券范围 | 基准 | 运行时间（北京时间） |
+| --- | --- | --- | --- | --- | --- |
+| A 股 | `data/cn/ma_latest.csv`、`data/cn/meta.json` | baostock，前复权日线 | 全部 A 股、ETF、指数 | 沪深 300（000300.SH） | 周五 18:23，周六 03:17 补跑 |
+| 美股 | `data/us/ma_latest.csv`、`data/us/meta.json` | Yahoo Finance（yfinance），复权日线 | 全部在美上市股票（含 ADR）和 ETF，加主要指数、VIX、10 年期美债收益率、原油、天然气、黄金、白银、铜期货、美元指数 | SPY | 周六 06:13，09:43 补跑 |
 
-## `ma_latest.csv` 的列
+GitHub 的定时任务常常排队晚几个小时，所以每个市场排两次。第二次发现数据已经覆盖最新交易日就直接跳过；A 股当天日线还没入库时也跳过，留给下一次。手动运行（Actions 页面 Run workflow）或改了代码触发的运行总是重新计算。
+
+## `ma_latest.csv` 的列（两个市场相同）
 
 | 列 | 含义 |
 | --- | --- |
-| code | 代码，如 600519.SH、300750.SZ |
-| name | 名称 |
-| kind | 股票、指数或 ETF |
+| code | 代码。A 股如 600519.SH；美股用 Yahoo 写法，如 MU、BRK-B、^GSPC、BZ=F |
+| name、kind | 名称；股票、ETF、指数、利率、商品或汇率 |
 | date | 最后一个有数据的交易日 |
-| close | 收盘价（前复权） |
-| ma50 / ma200 | 50 日、200 日均线 |
-| status | 完好、破位、震荡、数据不足 |
-| high_250 | 近 250 个交易日最高收盘价 |
-| pct_from_high | 收盘价距这个高点的百分比 |
+| close | 复权收盘价 |
+| ma50、ma200 | 50 日、200 日均线 |
 | trend | 方向：上涨、上涨中回调、下跌、下跌中反弹、数据不足 |
-| chg_1w / chg_4w / chg_13w | 近 1 周、4 周、13 周（5、20、60 个交易日）涨跌幅，% |
+| chg_1w、chg_4w、chg_13w | 近 1、4、13 周（5、20、60 个交易日）涨跌幅，% |
+| rel_1w、rel_4w、rel_13w | 相对基准：同期涨跌幅减去基准的涨跌幅，百分点 |
+| high_250、pct_from_high | 近 250 个交易日最高收盘价，收盘价距它的百分比 |
 
-状态规则：收盘价和 50 日均线都在 200 日均线之上记“完好”，都在之下记“破位”，其余记“震荡”，不足 200 个交易日记“数据不足”。
+方向规则：50 日均线在 200 日均线之上时，收盘价在 50 日均线之上记“上涨”，之下记“上涨中回调”；50 日均线在 200 日均线之下时，收盘价在 50 日均线之下记“下跌”，之上记“下跌中反弹”；不足 200 个交易日记“数据不足”。
 
-方向规则（白话）：50 日均线在 200 日均线之上时，收盘价在 50 日均线之上记“上涨”，之下记“上涨中回调”；50 日均线在 200 日均线之下时，收盘价在 50 日均线之下记“下跌”，之上记“下跌中反弹”。
+美股的 ^TNX 是 10 年期美债收益率乘以 10（例如 43.5 表示 4.35%）。
 
-和大盘比强弱：用同一文件里沪深 300（000300.SH）的 chg_4w、chg_13w 相减即可。
+## 读取（不用登录）
 
-读取方式（不用登录）：
+只取需要的行，行首匹配加逗号，避免误匹配：
 
 ```
-curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/ma_latest.csv | grep -E "600519.SH|300750.SZ"
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/cn/ma_latest.csv | grep -E "^code,|^(000300\.SH|600519\.SH),"
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/us/ma_latest.csv | grep -E "^code,|^(SPY|MU|\^GSPC),"
 ```
+
+## 代码
+
+- `scripts/common.py`：两个市场共用的计算和输出
+- `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数
+- `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行并提交数据

@@ -1,0 +1,41 @@
+name: us-weekly
+
+on:
+  schedule:
+    # 美股周五收盘是 UTC 20:00（夏令时）或 21:00（冬令时）。排两次，第二次发现数据已是最新就跳过。
+    - cron: "13 22 * * 5"   # 周五 22:13 UTC = 北京时间周六 06:13
+    - cron: "43 1 * * 6"    # 周六 01:43 UTC = 北京时间周六 09:43，补跑
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["scripts/common.py", "scripts/update_us.py", ".github/workflows/us-weekly.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-ma-us
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install yfinance
+      - run: python scripts/update_us.py
+        env:
+          FORCE: ${{ github.event_name == 'schedule' && '0' || '1' }}
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data
+          if git diff --cached --quiet; then echo "no data change"; exit 0; fi
+          git commit -m "data: us $(date -u +%F)"
+          for i in 1 2 3; do git pull --rebase origin main && git push && exit 0; sleep 15; done
+          exit 1
