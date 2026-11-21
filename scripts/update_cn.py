@@ -1,7 +1,7 @@
 """A 股：每周更新全部股票、ETF 和指数的均线、方向、涨跌幅和相对沪深 300 强弱。
 
 数据源：baostock（免费、无需注册），前复权日线。
-输出：data/cn/ma_latest.csv、data/cn/meta.json（列见 common.py 和 README）。
+输出：data/cn/ma_latest.csv、data/cn/history_w.csv、data/cn/meta.json（列见 common.py 和 README）。
 
 每周排了两次（周五傍晚、周六凌晨补跑）：
   - 最新交易日的日线 baostock 还没入库时，本次跳过，不写文件，留给下一次；
@@ -16,14 +16,14 @@ import time
 
 import baostock as bs
 
-from common import add_relative, already_done, summarize, write_outputs
+from common import add_relative, already_done, summarize, weekly_closes, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "cn")
 LEGACY = [os.path.join(ROOT, "data", n) for n in ("ma_latest.csv", "meta.json")]
 BENCH = "000300.SH"
 KEEP_TYPES = {"1": "股票", "2": "指数", "5": "ETF"}
-LOOKBACK_CALENDAR_DAYS = 420  # 约 280 个交易日，够算 200 日均线和 250 日高点
+LOOKBACK_CALENDAR_DAYS = 760  # 两年多一点：够画 104 周走势，也够算 200 日均线和 250 日高点
 
 
 def to_display_code(bs_code):
@@ -99,13 +99,15 @@ def main():
         start = (dt.date.fromisoformat(trade_day) - dt.timedelta(days=LOOKBACK_CALENDAR_DAYS)).isoformat()
         universe = fetch_universe()
         print(f"trade day {trade_day}, {len(universe)} instruments", flush=True)
-        rows, failures = [], []
+        rows, history, failures = [], {}, []
         for i, (code, name, kind) in enumerate(universe, 1):
             dates, closes, err = fetch_closes(code, start, trade_day)
             if err or not closes:
                 failures.append({"code": code, "error": err or "empty"})
             else:
-                rows.append(summarize(to_display_code(code), name, kind, dates, closes))
+                shown = to_display_code(code)
+                rows.append(summarize(shown, name, kind, dates, closes))
+                history[shown] = weekly_closes(dates, closes)
             if i % 500 == 0:
                 print(f"{i}/{len(universe)}", flush=True)
     finally:
@@ -123,7 +125,7 @@ def main():
         "ok": len(rows),
         "failed": len(failures),
         "failed_sample": failures[:20],
-    })
+    }, history)
     # 2026-11-21 起数据搬到 data/cn/；旧位置的文件在第一次新版运行时删除。
     for path in LEGACY:
         if os.path.exists(path):

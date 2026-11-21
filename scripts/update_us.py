@@ -4,7 +4,7 @@
 数据源：Yahoo Finance（经 yfinance），复权日线。
 证券清单：Nasdaq Trader 公布的 nasdaqlisted.txt、otherlisted.txt（全部在美上市证券），
 去掉测试代码、权证、单位、配股权、优先股和债券。
-输出：data/us/ma_latest.csv、data/us/meta.json（列见 common.py 和 README）。
+输出：data/us/ma_latest.csv、data/us/history_w.csv、data/us/meta.json（列见 common.py 和 README）。
 代码用 Yahoo 写法：BRK-B、^GSPC、BZ=F。
 
 每周排了两次（北京时间周六早上、上午补跑）：
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-from common import add_relative, already_done, summarize, write_outputs
+from common import add_relative, already_done, summarize, weekly_closes, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "us")
@@ -136,7 +136,7 @@ def main():
 
     universe = fetch_universe()
     print(f"trade day {trade_day}, {len(universe)} instruments", flush=True)
-    rows, failures = [], []
+    rows, history, failures = [], {}, []
     for i in range(0, len(universe), CHUNK):
         part = universe[i:i + CHUNK]
         got = fetch([sym for sym, _, _ in part])
@@ -149,6 +149,7 @@ def main():
                 failures.append({"code": sym, "error": "no finished bar"})
                 continue
             rows.append(summarize(sym, name, kind, dates, closes))
+            history[sym] = weekly_closes(dates, closes)
         print(f"{min(i + CHUNK, len(universe))}/{len(universe)}, ok {len(rows)}", flush=True)
         time.sleep(1)
 
@@ -164,7 +165,7 @@ def main():
         "ok": len(rows),
         "failed": len(failures),
         "failed_sample": failures[:20],
-    })
+    }, history)
     if not rows or len(rows) < 0.8 * len(universe):
         raise SystemExit("too many failures")
 

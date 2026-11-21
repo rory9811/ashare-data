@@ -17,9 +17,13 @@
 另外三种在 200 日均线之下，归"下跌一边"。
 涨跌幅按交易日算：1 周 = 5 个、4 周 = 20 个、13 周 = 60 个交易日。
 相对大盘 = 同期涨跌幅 − 基准（美股 SPY，A 股沪深 300）的同期涨跌幅，单位是百分点。
+
+另出一份两年周线（history_w.csv），供画走势图：每行一个代码，每列一周，
+值是那一周最后一个交易日的复权收盘价，列名写那一周的周五日期。
 """
 
 import csv
+import datetime as dt
 import json
 import os
 
@@ -27,6 +31,7 @@ FIELDS = ["code", "name", "kind", "date", "close", "ma50", "ma200", "trend",
           "chg_1w", "chg_4w", "chg_13w", "rel_1w", "rel_4w", "rel_13w",
           "high_250", "pct_from_high"]
 WINDOWS = {"1w": 5, "4w": 20, "13w": 60}
+HISTORY_WEEKS = 104
 
 
 def direction(close, ma50, ma200):
@@ -71,6 +76,20 @@ def summarize(code, name, kind, dates, closes):
     return row
 
 
+def week_end(day):
+    """某个日期所在那一周的周五（日期字符串进，日期字符串出）。"""
+    d = dt.date.fromisoformat(day)
+    return (d + dt.timedelta(days=4 - d.weekday())).isoformat()
+
+
+def weekly_closes(dates, closes):
+    """日线压成周线：{周五日期: 那一周最后一个交易日的收盘价}。"""
+    out = {}
+    for d, c in zip(dates, closes):
+        out[week_end(d)] = c
+    return out
+
+
 def add_relative(rows, bench_code):
     """用基准那一行的涨跌幅，给每一行算相对大盘。基准缺失时相对列留空。"""
     bench = next((r for r in rows if r["code"] == bench_code), None)
@@ -96,17 +115,33 @@ def already_done(out_dir, trade_day):
     meta = read_meta(out_dir)
     return (meta.get("trade_day") == trade_day
             and meta.get("columns") == FIELDS
+            and meta.get("history_weeks") == HISTORY_WEEKS
             and meta.get("ok", 0) >= 0.8 * max(meta.get("instruments", 1), 1))
 
 
-def write_outputs(out_dir, rows, meta):
+def _write_history(path, history, trade_day):
+    last = dt.date.fromisoformat(week_end(trade_day))
+    weeks = [(last - dt.timedelta(weeks=k)).isoformat() for k in range(HISTORY_WEEKS - 1, -1, -1)]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["code"] + weeks)
+        for code in sorted(history):
+            series = history[code]
+            values = [series.get(wk) for wk in weeks]
+            if any(v is not None for v in values):
+                w.writerow([code] + ["" if v is None else f"{v:.6g}" for v in values])
+
+
+def write_outputs(out_dir, rows, meta, history):
+    """rows：每只一行的汇总；history：{代码: weekly_closes(...) 的结果}。"""
     os.makedirs(out_dir, exist_ok=True)
     rows = sorted(rows, key=lambda r: r["code"])
     with open(os.path.join(out_dir, "ma_latest.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
-    meta = dict(meta, columns=FIELDS)
+    _write_history(os.path.join(out_dir, "history_w.csv"), history, meta["trade_day"])
+    meta = dict(meta, columns=FIELDS, history_weeks=HISTORY_WEEKS)
     with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     print(json.dumps({k: meta.get(k) for k in ("market", "trade_day", "instruments", "ok", "failed")},
