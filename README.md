@@ -70,6 +70,6 @@ python3 -I theme_chart.py --market us --codes MU,WDC,STX --out storage > storage
 ## 代码
 
 - `scripts/common.py`：两个市场共用的计算和输出
-- `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数
+- `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数（A 股六千多个代码要逐个查询，工作流先判断要不要算，再分六份并行取数，最后合并发布；缺任何一份都不发布）
 - `scripts/theme_chart.py`：按代码画主题的周 K 线图、走势对比，并算出价格结构
 - `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行，把结果覆盖到各自的数据分支

@@ -18,9 +18,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  update:
+  # 六千多个代码逐个查询，单台机器要三四个小时，超过时限就前功尽弃；
+  # 所以先决定要不要算，再分六份并行取数，最后合并发布。任何一份失败都不发布残缺数据。
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 20
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      trade_day: ${{ steps.plan.outputs.trade_day }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,12 +38,51 @@ jobs:
           if git fetch -q --depth 1 origin data-cn; then
             git show FETCH_HEAD:cn/meta.json > data/cn/meta.json || rm -f data/cn/meta.json
           fi
-      - run: python scripts/update_cn.py
+      - id: plan
+        run: python scripts/update_cn.py plan
         env:
           FORCE: ${{ github.event_name == 'schedule' && '0' || '1' }}
+
+  fetch:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install baostock
+      - run: python scripts/update_cn.py fetch --shard ${{ matrix.shard }} --of 6 --trade-day ${{ needs.plan.outputs.trade_day }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cn-shard-${{ matrix.shard }}
+          path: shards/
+          retention-days: 3
+
+  publish:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install baostock
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cn-shard-*
+          path: shards
+          merge-multiple: true
+      - run: python scripts/update_cn.py merge --of 6
       - name: Publish to the data-cn branch
         # 数据只保留最新一份：每次用一个没有历史的新提交覆盖 data-cn 分支，仓库不会越来越大。
-        if: hashFiles('data/cn/ma_latest.csv') != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
