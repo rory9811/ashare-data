@@ -18,6 +18,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
@@ -67,12 +68,24 @@ def parse_symbol_file(text, sym_col):
     return out
 
 
+def download_text(url, tries=5):
+    """下载代码清单；纳斯达克的服务器偶尔返回 503 或超时，隔一会儿重试，最后一次仍失败才报错。"""
+    for attempt in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt == tries - 1:
+                raise
+            print(f"symbol list {url}: {e!r}, retry {attempt + 1}", file=sys.stderr, flush=True)
+            time.sleep(30 * (attempt + 1))
+
+
 def fetch_universe():
     seen, rows = set(), []
     for url, col in SYMBOL_FILES:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            text = resp.read().decode("utf-8", "replace")
+        text = download_text(url)
         for sym, name, kind in parse_symbol_file(text, col):
             if sym not in seen:
                 seen.add(sym)
