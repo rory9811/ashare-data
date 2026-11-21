@@ -27,15 +27,27 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install baostock
+      - name: Restore last meta (for the skip check)
+        run: |
+          mkdir -p data/cn
+          if git fetch -q --depth 1 origin data-cn; then
+            git show FETCH_HEAD:cn/meta.json > data/cn/meta.json || rm -f data/cn/meta.json
+          fi
       - run: python scripts/update_cn.py
         env:
           FORCE: ${{ github.event_name == 'schedule' && '0' || '1' }}
-      - name: Commit data
+      - name: Publish to the data-cn branch
+        # 数据只保留最新一份：每次用一个没有历史的新提交覆盖 data-cn 分支，仓库不会越来越大。
+        if: hashFiles('data/cn/ma_latest.csv') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A data
-          if git diff --cached --quiet; then echo "no data change"; exit 0; fi
-          git commit -m "data: cn $(date -u +%F)"
-          for i in 1 2 3; do git pull --rebase origin main && git push && exit 0; sleep 15; done
-          exit 1
+          tmp=$(mktemp -d)
+          mkdir -p "$tmp/cn"
+          cp -r data/cn/. "$tmp/cn/"
+          cd "$tmp"
+          git init -q -b data-cn
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "data: cn $(date -u +%F)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data-cn

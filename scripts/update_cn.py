@@ -1,7 +1,7 @@
 """A 股：每周更新全部股票、ETF 和指数的均线、方向、涨跌幅和相对沪深 300 强弱。
 
 数据源：baostock（免费、无需注册），前复权日线。
-输出：data/cn/ma_latest.csv、data/cn/history_w.csv、data/cn/meta.json（列见 common.py 和 README）。
+输出：data/cn/ma_latest.csv、history_w.csv、ohlcv/<代码>.csv、meta.json（列见 common.py 和 README）。
 
 每周排了两次（周五傍晚、周六凌晨补跑）：
   - 最新交易日的日线 baostock 还没入库时，本次跳过，不写文件，留给下一次；
@@ -16,7 +16,7 @@ import time
 
 import baostock as bs
 
-from common import add_relative, already_done, summarize, weekly_closes, write_outputs
+from common import add_relative, already_done, summarize, weekly_bars, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "cn")
@@ -55,24 +55,29 @@ def latest_trade_day(today):
     return days[-1]
 
 
-def fetch_closes(code, start, end):
-    rs = bs.query_history_k_data_plus(code, "date,close", start_date=start, end_date=end,
-                                      frequency="d", adjustflag="2")
+def _f(x):
+    return float(x) if x else None
+
+
+def fetch_bars(code, start, end):
+    """前复权日线：返回 ({日期, 开, 高, 低, 收, 成交额} 各一列, 错误信息)。停牌日没有收盘价，跳过。"""
+    rs = bs.query_history_k_data_plus(code, "date,open,high,low,close,amount", start_date=start,
+                                      end_date=end, frequency="d", adjustflag="2")
     if rs.error_code != "0":
-        return None, None, rs.error_msg
-    dates, closes = [], []
+        return None, rs.error_msg
+    cols = {k: [] for k in ("dates", "opens", "highs", "lows", "closes", "amounts")}
     while rs.next():
-        d, c = rs.get_row_data()
+        d, o, h, l, c, a = rs.get_row_data()
         if c:
-            dates.append(d)
-            closes.append(float(c))
-    return dates, closes, None
+            for k, v in zip(cols, (d, _f(o), _f(h), _f(l), float(c), _f(a))):
+                cols[k].append(v)
+    return cols, None
 
 
 def day_loaded(trade_day):
     """用上证指数探一下：最新交易日的日线是否已经入库。"""
-    dates, _closes, err = fetch_closes("sh.000001", trade_day, trade_day)
-    return err is None and bool(dates) and dates[-1] == trade_day
+    bars, err = fetch_bars("sh.000001", trade_day, trade_day)
+    return err is None and bool(bars["dates"]) and bars["dates"][-1] == trade_day
 
 
 def fetch_universe():
@@ -101,13 +106,13 @@ def main():
         print(f"trade day {trade_day}, {len(universe)} instruments", flush=True)
         rows, history, failures = [], {}, []
         for i, (code, name, kind) in enumerate(universe, 1):
-            dates, closes, err = fetch_closes(code, start, trade_day)
-            if err or not closes:
+            bars, err = fetch_bars(code, start, trade_day)
+            if err or not bars["closes"]:
                 failures.append({"code": code, "error": err or "empty"})
             else:
                 shown = to_display_code(code)
-                rows.append(summarize(shown, name, kind, dates, closes))
-                history[shown] = weekly_closes(dates, closes)
+                rows.append(summarize(shown, name, kind, bars["dates"], bars["closes"]))
+                history[shown] = weekly_bars(**bars)
             if i % 500 == 0:
                 print(f"{i}/{len(universe)}", flush=True)
     finally:

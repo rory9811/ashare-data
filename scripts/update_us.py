@@ -4,7 +4,7 @@
 数据源：Yahoo Finance（经 yfinance），复权日线。
 证券清单：Nasdaq Trader 公布的 nasdaqlisted.txt、otherlisted.txt（全部在美上市证券），
 去掉测试代码、权证、单位、配股权、优先股和债券。
-输出：data/us/ma_latest.csv、data/us/history_w.csv、data/us/meta.json（列见 common.py 和 README）。
+输出：data/us/ma_latest.csv、history_w.csv、ohlcv/<代码>.csv、meta.json（列见 common.py 和 README）。
 代码用 Yahoo 写法：BRK-B、^GSPC、BZ=F。
 
 每周排了两次（北京时间周六早上、上午补跑）：
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-from common import add_relative, already_done, summarize, weekly_closes, write_outputs
+from common import add_relative, already_done, summarize, weekly_bars, write_outputs
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OUT_DIR = os.path.join(ROOT, "data", "us")
@@ -84,19 +84,32 @@ def fetch_universe():
     return rows
 
 
-def _series(df, ticker):
+KEYS = ("dates", "opens", "highs", "lows", "closes", "amounts")
+
+
+def _bars(df, ticker):
+    """从 yfinance 的结果里取出一个代码的日线；成交额 = 当日收盘价 × 成交量。"""
     if isinstance(df.columns, pd.MultiIndex):
         if ticker not in df.columns.get_level_values(0):
             return None
-        s = df[ticker]["Close"]
+        sub = df[ticker]
     else:
-        s = df["Close"]
-    s = s.dropna()
-    return s if len(s) else None
+        sub = df
+    sub = sub.dropna(subset=["Close"])
+    if not len(sub):
+        return None
+    num = lambda col: [float(x) if x == x else None for x in sub[col].values]
+    closes = num("Close")
+    volumes = num("Volume") if "Volume" in sub else [None] * len(closes)
+    return {
+        "dates": [d.strftime("%Y-%m-%d") for d in sub.index],
+        "opens": num("Open"), "highs": num("High"), "lows": num("Low"), "closes": closes,
+        "amounts": [c * v if v else 0.0 for c, v in zip(closes, volumes)],
+    }
 
 
 def fetch(tickers, tries=3):
-    """返回 {代码: (日期列表, 收盘价列表)}，日期升序；整块失败时重试。"""
+    """返回 {代码: 日线（dates、opens、highs、lows、closes、amounts 各一列）}，日期升序；整块失败时重试。"""
     for attempt in range(tries):
         try:
             df = yf.download(tickers, period="2y", interval="1d", auto_adjust=True,
@@ -107,20 +120,20 @@ def fetch(tickers, tries=3):
             continue
         out = {}
         for t in tickers:
-            s = _series(df, t)
-            if s is not None:
-                out[t] = ([d.strftime("%Y-%m-%d") for d in s.index], [float(x) for x in s.values])
+            b = _bars(df, t)
+            if b is not None:
+                out[t] = b
         if out or attempt == tries - 1:
             return out
         time.sleep(30 * (attempt + 1))
     return {}
 
 
-def drop_unfinished_bar(dates, closes, now_ny):
+def drop_unfinished_bar(bars, now_ny):
     """美股盘中运行时，当天那根日线还没收盘，丢掉。"""
-    if dates and dates[-1] == now_ny.date().isoformat() and now_ny.time() < dt.time(16, 30):
-        return dates[:-1], closes[:-1]
-    return dates, closes
+    if bars["dates"] and bars["dates"][-1] == now_ny.date().isoformat() and now_ny.time() < dt.time(16, 30):
+        return {k: bars[k][:-1] for k in KEYS}
+    return bars
 
 
 def refetch_stale(rows, history, universe, trade_day, now_ny, limit=200):
@@ -133,11 +146,11 @@ def refetch_stale(rows, history, universe, trade_day, now_ny, limit=200):
         got = fetch([sym], tries=1).get(sym)
         if not got:
             continue
-        dates, closes = drop_unfinished_bar(*got, now_ny)
-        if closes and dates[-1] > rows[pos[sym]]["date"]:
+        bars = drop_unfinished_bar(got, now_ny)
+        if bars["closes"] and bars["dates"][-1] > rows[pos[sym]]["date"]:
             name, kind = info[sym]
-            rows[pos[sym]] = summarize(sym, name, kind, dates, closes)
-            history[sym] = weekly_closes(dates, closes)
+            rows[pos[sym]] = summarize(sym, name, kind, bars["dates"], bars["closes"])
+            history[sym] = weekly_bars(**bars)
     left = {r["code"]: r["date"] for r in rows if r["date"] < trade_day and r["code"] in info}
     print(f"stale before refetch {len(stale)}, after {len(left)}", flush=True)
     return left
@@ -149,7 +162,7 @@ def main():
     bench = fetch([BENCH]).get(BENCH)
     if not bench:
         raise SystemExit("cannot download SPY")
-    trade_day = drop_unfinished_bar(*bench, now_ny)[0][-1]
+    trade_day = drop_unfinished_bar(bench, now_ny)["dates"][-1]
     if os.environ.get("FORCE") != "1" and already_done(OUT_DIR, trade_day):
         print(f"us data for {trade_day} already up to date, skip")
         return
@@ -164,12 +177,12 @@ def main():
             if sym not in got:
                 failures.append({"code": sym, "error": "empty"})
                 continue
-            dates, closes = drop_unfinished_bar(*got[sym], now_ny)
-            if not closes:
+            bars = drop_unfinished_bar(got[sym], now_ny)
+            if not bars["closes"]:
                 failures.append({"code": sym, "error": "no finished bar"})
                 continue
-            rows.append(summarize(sym, name, kind, dates, closes))
-            history[sym] = weekly_closes(dates, closes)
+            rows.append(summarize(sym, name, kind, bars["dates"], bars["closes"]))
+            history[sym] = weekly_bars(**bars)
         print(f"{min(i + CHUNK, len(universe))}/{len(universe)}, ok {len(rows)}", flush=True)
         time.sleep(1)
 

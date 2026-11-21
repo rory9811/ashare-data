@@ -18,14 +18,21 @@
 涨跌幅按交易日算：1 周 = 5 个、4 周 = 20 个、13 周 = 60 个交易日。
 相对大盘 = 同期涨跌幅 − 基准（美股 SPY，A 股沪深 300）的同期涨跌幅，单位是百分点。
 
-另出一份两年周线（history_w.csv），供画走势图：每行一个代码，每列一周，
-值是那一周最后一个交易日的复权收盘价，列名写那一周的周五日期。
+另出两年周线，供画图和读价格结构：
+  history_w.csv     每行一个代码，每列一周，值是那一周最后一个交易日的复权收盘价，
+                    列名写那一周的周五日期（一次取很多代码时用）；
+  ohlcv/<代码>.csv  每个代码一个文件，每周一行：开、高、低、收（复权）和成交额
+                    （A 股是成交额，美股是每日收盘价×成交量之和，单位都是当地货币），
+                    文件名里除字母、数字、点、横线以外的字符换成下划线（^GSPC → _GSPC）。
+成交额不受拆股、送转影响，前后可比；成交量（股数）会被拆股改变，所以不用。
 """
 
 import csv
 import datetime as dt
 import json
 import os
+import re
+import shutil
 
 FIELDS = ["code", "name", "kind", "date", "close", "ma50", "ma200", "trend",
           "chg_1w", "chg_4w", "chg_13w", "rel_1w", "rel_4w", "rel_13w",
@@ -82,11 +89,27 @@ def week_end(day):
     return (d + dt.timedelta(days=4 - d.weekday())).isoformat()
 
 
-def weekly_closes(dates, closes):
-    """日线压成周线：{周五日期: 那一周最后一个交易日的收盘价}。"""
+def safe_name(code):
+    """代码转文件名：^GSPC → _GSPC，BZ=F → BZ_F。"""
+    return re.sub(r"[^A-Za-z0-9.\-]", "_", code)
+
+
+def weekly_bars(dates, opens, highs, lows, closes, amounts):
+    """日线压成周线：{周五日期: [开, 高, 低, 收, 成交额]}。缺的开高低用收盘价补。"""
     out = {}
-    for d, c in zip(dates, closes):
-        out[week_end(d)] = c
+    for d, o, h, l, c, a in zip(dates, opens, highs, lows, closes, amounts):
+        o = o if o else c
+        h = max(x for x in (h, o, c) if x)
+        l = min(x for x in (l, o, c) if x)
+        wk = week_end(d)
+        bar = out.get(wk)
+        if bar is None:
+            out[wk] = [o, h, l, c, a or 0.0]
+        else:
+            bar[1] = max(bar[1], h)
+            bar[2] = min(bar[2], l)
+            bar[3] = c
+            bar[4] += a or 0.0
     return out
 
 
@@ -115,33 +138,57 @@ def already_done(out_dir, trade_day):
     meta = read_meta(out_dir)
     return (meta.get("trade_day") == trade_day
             and meta.get("columns") == FIELDS
-            and meta.get("history_weeks") == HISTORY_WEEKS
+            and meta.get("history_format") == HISTORY_FORMAT
             and meta.get("ok", 0) >= 0.8 * max(meta.get("instruments", 1), 1))
 
 
-def _write_history(path, history, trade_day):
+HISTORY_FORMAT = "ohlcv-weekly-104"
+OHLCV_FIELDS = ["week", "open", "high", "low", "close", "amount"]
+
+
+def _weeks(trade_day):
     last = dt.date.fromisoformat(week_end(trade_day))
-    weeks = [(last - dt.timedelta(weeks=k)).isoformat() for k in range(HISTORY_WEEKS - 1, -1, -1)]
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    return [(last - dt.timedelta(weeks=k)).isoformat() for k in range(HISTORY_WEEKS - 1, -1, -1)]
+
+
+def _num(v):
+    return "" if v is None else f"{v:.6g}"
+
+
+def _write_history(out_dir, history, trade_day):
+    weeks = _weeks(trade_day)
+    with open(os.path.join(out_dir, "history_w.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["code"] + weeks)
         for code in sorted(history):
-            series = history[code]
-            values = [series.get(wk) for wk in weeks]
+            bars = history[code]
+            values = [bars[wk][3] if wk in bars else None for wk in weeks]
             if any(v is not None for v in values):
-                w.writerow([code] + ["" if v is None else f"{v:.6g}" for v in values])
+                w.writerow([code] + [_num(v) for v in values])
+    # 每次整目录重写：退市或改代码的不会留下旧文件
+    folder = os.path.join(out_dir, "ohlcv")
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
+    for code, bars in history.items():
+        rows = [[wk] + [_num(x) for x in bars[wk][:4]] + [f"{bars[wk][4]:.0f}"] for wk in weeks if wk in bars]
+        if rows:
+            with open(os.path.join(folder, safe_name(code) + ".csv"), "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(OHLCV_FIELDS)
+                w.writerows(rows)
 
 
 def write_outputs(out_dir, rows, meta, history):
-    """rows：每只一行的汇总；history：{代码: weekly_closes(...) 的结果}。"""
+    """rows：每只一行的汇总；history：{代码: weekly_bars(...) 的结果}。"""
     os.makedirs(out_dir, exist_ok=True)
     rows = sorted(rows, key=lambda r: r["code"])
     with open(os.path.join(out_dir, "ma_latest.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
-    _write_history(os.path.join(out_dir, "history_w.csv"), history, meta["trade_day"])
-    meta = dict(meta, columns=FIELDS, history_weeks=HISTORY_WEEKS)
+    _write_history(out_dir, history, meta["trade_day"])
+    meta = dict(meta, columns=FIELDS, history_weeks=HISTORY_WEEKS, history_format=HISTORY_FORMAT,
+                ohlcv_fields=OHLCV_FIELDS)
     with open(os.path.join(out_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     print(json.dumps({k: meta.get(k) for k in ("market", "trade_day", "instruments", "ok", "failed")},

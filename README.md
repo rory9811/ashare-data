@@ -1,12 +1,14 @@
 # ashare-data
 
 每周自动计算的 A 股和美股行情表，供《A股主题账本》《美股主题账本》每周体检读取价格。
-所有数字都由程序从复权收盘价算出，账本只引用，不手算。（仓库名沿用最初的 A 股版本，现在两个市场都在这里。）
+所有数字都由程序从复权日线算出，账本只引用，不手算。（仓库名沿用最初的 A 股版本，现在两个市场都在这里。）
 
-| 市场 | 文件 | 数据源 | 证券范围 | 基准 | 运行时间（北京时间） |
+代码在 `main` 分支；数据每个市场一个分支，只保留最新一份（每次运行用一个没有历史的新提交覆盖），所以仓库不会每周变大：
+
+| 市场 | 数据分支和文件 | 数据源 | 证券范围 | 基准 | 运行时间（北京时间） |
 | --- | --- | --- | --- | --- | --- |
-| A 股 | `data/cn/ma_latest.csv`、`data/cn/history_w.csv`、`data/cn/meta.json` | baostock，前复权日线 | 全部 A 股、ETF、指数 | 沪深 300（000300.SH） | 周五 18:23，周六 03:17 补跑 |
-| 美股 | `data/us/ma_latest.csv`、`data/us/history_w.csv`、`data/us/meta.json` | Yahoo Finance（yfinance），复权日线 | 全部在美上市股票（含 ADR）和 ETF，加主要指数、VIX、10 年期美债收益率、原油、天然气、黄金、白银、铜期货、美元指数 | SPY | 周六 06:13，09:43 补跑 |
+| A 股 | `data-cn` 分支：`cn/ma_latest.csv`、`cn/history_w.csv`、`cn/ohlcv/<代码>.csv`、`cn/meta.json` | baostock，前复权日线 | 全部 A 股、ETF、指数 | 沪深 300（000300.SH） | 周五 18:23，周六 03:17 补跑 |
+| 美股 | `data-us` 分支：`us/ma_latest.csv`、`us/history_w.csv`、`us/ohlcv/<代码>.csv`、`us/meta.json` | Yahoo Finance（yfinance），复权日线 | 全部在美上市股票（含 ADR）和 ETF，加主要指数、VIX、10 年期美债收益率、原油、天然气、黄金、白银、铜期货、美元指数 | SPY | 周六 06:13，09:43 补跑 |
 
 美股批量下载偶尔漏掉个别代码的最后几根日线（例如拆股当天），程序会逐个重取一次；仍然停在最新交易日之前的代码和日期写在 `meta.json` 的 `stale` 里，账本引用这些代码时要注明数据日期并另行核对。
 
@@ -30,24 +32,27 @@ GitHub 的定时任务常常排队晚几个小时，所以每个市场排两次�
 
 美股的 ^TNX 是 10 年期美债收益率乘以 10（例如 43.5 表示 4.35%）。
 
-## `history_w.csv`：两年周线（画走势图用）
+## 两年周线（画图、读价格结构用）
 
-每行一个代码，第一列是代码，后面 104 列各是一周：值为那一周最后一个交易日的复权收盘价，列名写那一周的周五日期；那周没有数据（尚未上市、停牌）就留空。和 `ma_latest.csv` 出自同一次取数，所以图和数字对得上。
+都和 `ma_latest.csv` 出自同一次取数，所以图和数字对得上。周的标签是那一周的周五日期，值取那一周的交易日。
+
+- `history_w.csv`：每行一个代码，第一列是代码，后面 104 列各是一周的复权收盘价；那周没有数据（尚未上市、停牌）就留空。一次比较很多代码时用。
+- `ohlcv/<代码>.csv`：每个代码一个文件，每周一行，列为 `week, open, high, low, close, amount`：那一周的开盘（第一个交易日）、最高、最低、收盘（最后一个交易日），都已复权；`amount` 是那一周的成交额（A 股取交易所公布的成交金额；美股是每日收盘价 × 成交量之和，近似值），单位是当地货币。用成交额不用成交量，因为拆股、送转会改变股数，但不改变成交额。文件名里字母、数字、点、横线以外的字符换成下划线：`^GSPC` → `_GSPC.csv`，`BZ=F` → `BZ_F.csv`。
 
 ## 读取（不用登录）
 
 只取需要的行，行首匹配加逗号，避免误匹配：
 
 ```
-curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/cn/ma_latest.csv | grep -E "^code,|^(000300\.SH|600519\.SH),"
-curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/us/ma_latest.csv | grep -E "^code,|^(SPY|MU|\^GSPC),"
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-cn/cn/ma_latest.csv | grep -E "^code,|^(000300\.SH|600519\.SH),"
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-us/us/ma_latest.csv | grep -E "^code,|^(SPY|MU|\^GSPC),"
 ```
 
 画一个主题的走势图（下载周线和脚本，再运行；只用到 matplotlib）：
 
 ```
 mkdir -p /tmp/chart && cd /tmp/chart
-curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/us/history_w.csv -o history_w.csv
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-us/us/history_w.csv -o history_w.csv
 curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/scripts/theme_chart.py -o theme_chart.py
 python3 -I theme_chart.py --market us --history history_w.csv --codes MU,WDC,STX --out storage
 ```
@@ -59,4 +64,4 @@ python3 -I theme_chart.py --market us --history history_w.csv --codes MU,WDC,STX
 - `scripts/common.py`：两个市场共用的计算和输出
 - `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数
 - `scripts/theme_chart.py`：按代码画主题走势图
-- `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行并提交数据
+- `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行，把结果覆盖到各自的数据分支
