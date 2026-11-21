@@ -10,6 +10,11 @@
   破位：收盘价在 200 日均线之下，且 50 日均线在 200 日均线之下
   震荡：其余情况
   数据不足：可用交易日少于 200 天
+
+每周排了两次：周五傍晚一次，周六凌晨补一次。
+  - 最新交易日的日线 baostock 还没入库时，本次直接跳过，不写文件，留给下一次。
+  - 定时运行时，如果 data/meta.json 已经是最新交易日且成功率达标，直接跳过。
+  - 手动运行或改了代码触发的运行（环境变量 FORCE=1）总是重新计算。
 """
 
 import csv
@@ -75,6 +80,23 @@ def latest_trade_day(today: dt.date) -> str:
     return days[-1]
 
 
+def already_done(trade_day: str) -> bool:
+    path = os.path.join(OUT_DIR, "meta.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return (meta.get("trade_day") == trade_day
+            and meta.get("ok", 0) >= 0.8 * max(meta.get("instruments", 1), 1))
+
+
+def day_loaded(trade_day: str) -> bool:
+    """用上证指数探一下：最新交易日的日线是否已经入库。"""
+    _closes, last_date, err = fetch_closes("sh.000001", trade_day, trade_day)
+    return err is None and last_date == trade_day
+
+
 def fetch_universe():
     rs = bs.query_stock_basic()
     rows = []
@@ -105,6 +127,12 @@ def main():
     login_with_retry()
     try:
         trade_day = latest_trade_day(dt.date.today())
+        if os.environ.get("FORCE") != "1" and already_done(trade_day):
+            print(f"data for {trade_day} already up to date, skip")
+            return
+        if not day_loaded(trade_day):
+            print(f"{trade_day} daily bars not loaded in baostock yet, skip; the next scheduled run retries")
+            return
         start = (dt.date.fromisoformat(trade_day) - dt.timedelta(days=LOOKBACK_CALENDAR_DAYS)).isoformat()
         universe = fetch_universe()
         print(f"trade day {trade_day}, {len(universe)} instruments", flush=True)
