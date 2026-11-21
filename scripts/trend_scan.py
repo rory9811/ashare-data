@@ -94,6 +94,8 @@ def main():
     for r in sorted(macro, key=lambda r: -(num(r["rel_13w"]) or 0)):
         print("  " + line(r))
 
+    if "amt_pct" not in rows[0]:
+        sys.exit("ma_latest.csv 里没有 amt_pct 列（数据还是旧格式），等数据仓库下一次计算完成后再扫描")
     stocks = [r for r in rows if r["kind"] == "股票" and (num(r["amt_pct"]) or 0) >= BIG_STOCK_PCT
               and not (args.market == "cn" and "ST" in r["name"].upper())]
     top, bottom, n = ends(stocks, args.top)
