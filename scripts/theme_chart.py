@@ -21,6 +21,7 @@
 
 import argparse
 import csv
+import datetime as dt
 import json
 import math
 import os
@@ -505,17 +506,28 @@ def _vol(vals):
     return math.sqrt(sum((r - m) ** 2 for r in rets) / (len(rets) - 1)) * math.sqrt(52) * 100
 
 
-def path_stats(vals):
+def years_back(weeks, years):
+    """最接近最后一周往前 years 年的那一周的下标；离目标超过两周（数据不够长）返回 None。
+    按日期找而不按行数数：A 股国庆、春节整周休市，两年里只有一百零二三根周线。"""
+    last = dt.date.fromisoformat(weeks[-1])
+    target = last - dt.timedelta(days=364 * years)
+    i = min(range(len(weeks)), key=lambda k: abs((dt.date.fromisoformat(weeks[k]) - target).days))
+    return i if abs((dt.date.fromisoformat(weeks[i]) - target).days) <= 14 else None
+
+
+def path_stats(vals, weeks):
     """用完整的两年周线（不重设起点）算趋势的“体质”，对应研究里的几个量：
     两年涨幅、前一年和近一年各自的涨幅、加速度（两年涨幅减前一年涨幅，
     Greenwood-Shleifer-You 2019 的定义）、近一年波动率比前一年的变化、
-    近一年上涨周的占比（涨得是否是一小步一小步的，对应 Da-Gurun-Warachka 2014）。"""
-    if len(vals) < 104 or vals[0] is None or vals[-53] is None or vals[-1] is None:
+    近一年上涨周的占比（涨得是否是一小步一小步的，对应 Da-Gurun-Warachka 2014）。
+    vals 和 weeks 一一对应（weeks 是基准的周五日期）。"""
+    i2, i1 = years_back(weeks, 2), years_back(weeks, 1)
+    if i2 is None or i1 is None or vals[i2] is None or vals[i1] is None or vals[-1] is None:
         return None
-    v2, v1, v0 = vals[0], vals[-53], vals[-1]
+    v2, v1, v0 = vals[i2], vals[i1], vals[-1]
     first, recent, two = v1 / v2 - 1, v0 / v1 - 1, v0 / v2 - 1
-    last52 = [v for v in vals[-53:] if v]
-    prev52 = [v for v in vals[:52] if v]
+    last52 = [v for v in vals[i1:] if v]
+    prev52 = [v for v in vals[i2:i1 + 1] if v]
     ups = [b > a for a, b in zip(last52, last52[1:])]
     vol_now, vol_prev = _vol(last52), _vol(prev52)
     return {
@@ -525,16 +537,16 @@ def path_stats(vals):
     }
 
 
-def heat(codes, bench, raw):
+def heat(codes, bench, raw, weeks):
     """主题层面（各代表股等权平均）的急涨检查，加上每只代表股的同一组数。
     急涨门槛照搬 Greenwood-Shleifer-You：两年涨幅 ≥100% 且超出大盘 ≥100 个百分点。
     原研究用的是整个行业的市值加权组合，这里只有 2 到 4 只代表股，只能当参考。
     这组数对向下的主题同样有用（两年跌了多少、是否越跌越快、波动是否飙升），
     但急涨门槛只对上涨成立；急跌没有对应的研究门槛，所以不设“急跌门槛”。"""
-    b = path_stats(raw[bench])
+    b = path_stats(raw[bench], weeks)
     rows, stats = [], []
     for c in codes:
-        st = path_stats(raw[c])
+        st = path_stats(raw[c], weeks)
         if st is None:
             rows.append({"代码": c, "说明": "不足两年周线，不算"})
             continue
@@ -867,7 +879,7 @@ def main():
         "各代码": [summary(c, shown, idx[c], idx[bench] if c != bench else None) for c in codes]
                  + [summary(bench, shown, idx[bench], None)],
         "价格结构（解读见《股票价格理论手册》）": {c: clean(structs[c]) for c in codes + [bench]},
-        "趋势体质（两年完整周线）": heat(codes, bench, raw),
+        "趋势体质（两年完整周线）": heat(codes, bench, raw, weeks),
         "文件": [args.out + ".png", args.out + ".widget.txt"],
     }, ensure_ascii=False, indent=1))
 
