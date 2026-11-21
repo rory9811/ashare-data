@@ -2,8 +2,8 @@
   "market": "us",
   "source": "Yahoo Finance（yfinance），复权日线",
   "benchmark": "SPY",
-  "run_started_utc": "2026-11-21T08:04:46+00:00",
-  "run_finished_utc": "2026-11-21T08:17:01+00:00",
+  "run_started_utc": "2026-11-21T08:28:15+00:00",
+  "run_finished_utc": "2026-11-21T08:42:31+00:00",
   "trade_day": "2026-11-20",
   "instruments": 11693,
   "ok": 11693,
@@ -26,5 +26,6 @@
     "rel_13w",
     "high_250",
     "pct_from_high"
-  ]
+  ],
+  "history_weeks": 104
 }
