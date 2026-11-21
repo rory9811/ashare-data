@@ -10,7 +10,7 @@
                     右边相对基准的强弱（代码 ÷ 基准，起点 = 100）。
   <out>.widget.txt  账本文档里图表组件的完整代码（走势对比，数据已内嵌，隔周取一个点）。
   标准输出          数字摘要（区间涨跌、高低点、相对基准）、价格结构（见 structure 函数）、
-                    涨势体质（见 path_stats、heat）。
+                    趋势体质（见 path_stats、heat）。
 图只用来看形状；写进账本的数字一律取自标准输出或 ma_latest.csv，不从图上读。
 每一项结构读数对应哪种理论、怎么解读，见《股票价格理论手册》。
 
@@ -506,7 +506,7 @@ def _vol(vals):
 
 
 def path_stats(vals):
-    """用完整的两年周线（不重设起点）算涨势的“体质”，对应研究里的几个量：
+    """用完整的两年周线（不重设起点）算趋势的“体质”，对应研究里的几个量：
     两年涨幅、前一年和近一年各自的涨幅、加速度（两年涨幅减前一年涨幅，
     Greenwood-Shleifer-You 2019 的定义）、近一年波动率比前一年的变化、
     近一年上涨周的占比（涨得是否是一小步一小步的，对应 Da-Gurun-Warachka 2014）。"""
@@ -528,7 +528,9 @@ def path_stats(vals):
 def heat(codes, bench, raw):
     """主题层面（各代表股等权平均）的急涨检查，加上每只代表股的同一组数。
     急涨门槛照搬 Greenwood-Shleifer-You：两年涨幅 ≥100% 且超出大盘 ≥100 个百分点。
-    原研究用的是整个行业的市值加权组合，这里只有 2 到 4 只代表股，只能当参考。"""
+    原研究用的是整个行业的市值加权组合，这里只有 2 到 4 只代表股，只能当参考。
+    这组数对向下的主题同样有用（两年跌了多少、是否越跌越快、波动是否飙升），
+    但急涨门槛只对上涨成立；急跌没有对应的研究门槛，所以不设“急跌门槛”。"""
     b = path_stats(raw[bench])
     rows, stats = [], []
     for c in codes:
@@ -865,7 +867,7 @@ def main():
         "各代码": [summary(c, shown, idx[c], idx[bench] if c != bench else None) for c in codes]
                  + [summary(bench, shown, idx[bench], None)],
         "价格结构（解读见《股票价格理论手册》）": {c: clean(structs[c]) for c in codes + [bench]},
-        "涨势体质（两年完整周线）": heat(codes, bench, raw),
+        "趋势体质（两年完整周线）": heat(codes, bench, raw),
         "文件": [args.out + ".png", args.out + ".widget.txt"],
     }, ensure_ascii=False, indent=1))
 
