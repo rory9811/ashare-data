@@ -48,20 +48,28 @@ curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-cn/cn/ma_la
 curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-us/us/ma_latest.csv | grep -E "^code,|^(SPY|MU|\^GSPC),"
 ```
 
-画一个主题的走势图（下载周线和脚本，再运行；只用到 matplotlib）：
+画一个主题的图并算出价格结构（只要下载脚本；它会把需要的周线文件自动下载到 `ohlcv/`；只用到 matplotlib 和 curl）：
 
 ```
 mkdir -p /tmp/chart && cd /tmp/chart
-curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/data-us/us/history_w.csv -o history_w.csv
 curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/scripts/theme_chart.py -o theme_chart.py
-python3 -I theme_chart.py --market us --history history_w.csv --codes MU,WDC,STX --out storage
+python3 -I theme_chart.py --market us --codes MU,WDC,STX --out storage > storage.json
 ```
 
-得到 `storage.png`（给模型看：上图是走势，起点记为 100；下图是相对基准的强弱；纵轴都是对数刻度，同样的高度代表同样的涨跌幅度）、`storage.widget.txt`（账本文档里图表组件的代码）和打印出来的数字摘要（区间涨跌、两年内高点和日期、距高点回撤、相对基准），以及“涨势体质”：两年涨幅、加速度、波动变化、上涨周占比，和主题是否达到急涨门槛（两年涨幅 ≥100% 且超出基准 ≥100 个百分点，取自 Greenwood、Shleifer、You 2019 对行业泡沫的研究）。图只用来看形状，数字以摘要和 `ma_latest.csv` 为准。
+得到三样东西：
+
+- `storage.png`，给模型看。每只代表股一格：周 K 线（对数刻度，美股绿涨红跌、A 股红涨绿跌）、10 周和 40 周均线（约等于 50 日和 200 日均线）、程序找出的波段高低点（小三角）、最近的横盘区间（浅色方框），下面是每周成交额和它的 10 周均值；最下面两格是各代码和基准的走势对比（起点记为 100）和相对基准的强弱。
+- `storage.widget.txt`，账本文档里图表组件的代码（走势对比）。
+- 标准输出（上例存进 `storage.json`）：
+  - 数字摘要：区间涨跌、两年内高低点和日期、距高点回撤、相对基准、近 13 和 26 周涨跌。
+  - 价格结构（每个代表股和基准）：波段阈值（周波动率的 3 倍，限制在 6% 到 35%，回落或反弹超过它才算新波段）、最近的波段高低点、道氏结构（高低点抬高还是降低）、当前这一段、中期回撤和主要趋势回撤、道氏反转信号、最近两段上涨和下跌的幅度与成交额、横盘区间与突破状态（区间用收盘价定上下沿，盘中冲出又收回算被拒绝的试探）、温斯坦阶段（40 周均线）、趋势模板（米勒维尼八条的周线版）、52 周位置、相对强弱线、量价（近 13 周上涨周与下跌周成交额之比、近 26 周放量大幅波动的周、近 6 周逐周的涨跌、振幅、成交额倍数和收盘位置）。
+  - 涨势体质：两年涨幅、加速度、波动变化、上涨周占比，和主题是否达到急涨门槛（两年涨幅 ≥100% 且超出基准 ≥100 个百分点，取自 Greenwood、Shleifer、You 2019）。
+
+每项读数对应哪种理论、怎么解读，见《股票价格理论手册》。图只用来看形状，数字以标准输出和 `ma_latest.csv` 为准。
 
 ## 代码
 
 - `scripts/common.py`：两个市场共用的计算和输出
 - `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数
-- `scripts/theme_chart.py`：按代码画主题走势图
+- `scripts/theme_chart.py`：按代码画主题的周 K 线图、走势对比，并算出价格结构
 - `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行，把结果覆盖到各自的数据分支
