@@ -8,6 +8,8 @@
 | A 股 | `data/cn/ma_latest.csv`、`data/cn/history_w.csv`、`data/cn/meta.json` | baostock，前复权日线 | 全部 A 股、ETF、指数 | 沪深 300（000300.SH） | 周五 18:23，周六 03:17 补跑 |
 | 美股 | `data/us/ma_latest.csv`、`data/us/history_w.csv`、`data/us/meta.json` | Yahoo Finance（yfinance），复权日线 | 全部在美上市股票（含 ADR）和 ETF，加主要指数、VIX、10 年期美债收益率、原油、天然气、黄金、白银、铜期货、美元指数 | SPY | 周六 06:13，09:43 补跑 |
 
+美股批量下载偶尔漏掉个别代码的最后几根日线（例如拆股当天），程序会逐个重取一次；仍然停在最新交易日之前的代码和日期写在 `meta.json` 的 `stale` 里，账本引用这些代码时要注明数据日期并另行核对。
+
 GitHub 的定时任务常常排队晚几个小时，所以每个市场排两次。第二次发现数据已经覆盖最新交易日就直接跳过；A 股当天日线还没入库时也跳过，留给下一次。手动运行（Actions 页面 Run workflow）或改了代码触发的运行总是重新计算。
 
 ## `ma_latest.csv` 的列（两个市场相同）
@@ -41,8 +43,20 @@ curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/cn/ma_
 curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/us/ma_latest.csv | grep -E "^code,|^(SPY|MU|\^GSPC),"
 ```
 
+画一个主题的走势图（下载周线和脚本，再运行；只用到 matplotlib）：
+
+```
+mkdir -p /tmp/chart && cd /tmp/chart
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/data/us/history_w.csv -o history_w.csv
+curl -sL https://raw.githubusercontent.com/rory9811/ashare-data/main/scripts/theme_chart.py -o theme_chart.py
+python3 -I theme_chart.py --market us --history history_w.csv --codes MU,WDC,STX --out storage
+```
+
+得到 `storage.png`（给模型看：上图是走势，起点记为 100；下图是相对基准的强弱；纵轴都是对数刻度，同样的高度代表同样的涨跌幅度）、`storage.widget.txt`（账本文档里图表组件的代码）和打印出来的数字摘要（区间涨跌、两年内高点和日期、距高点回撤、相对基准）。图只用来看形状，数字以摘要和 `ma_latest.csv` 为准。
+
 ## 代码
 
 - `scripts/common.py`：两个市场共用的计算和输出
 - `scripts/update_cn.py`、`scripts/update_us.py`：各市场取数
+- `scripts/theme_chart.py`：按代码画主题走势图
 - `.github/workflows/cn-weekly.yml`、`us-weekly.yml`：定时运行并提交数据
