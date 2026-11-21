@@ -11,6 +11,13 @@
   震荡：其余情况
   数据不足：可用交易日少于 200 天
 
+方向（白话，2026-11-21 起）：
+  上涨：50 日均线在 200 日均线之上，收盘价在 50 日均线之上
+  上涨中回调：50 日均线在 200 日均线之上，收盘价跌到 50 日均线之下
+  下跌：50 日均线在 200 日均线之下，收盘价在 50 日均线之下
+  下跌中反弹：50 日均线在 200 日均线之下，收盘价回到 50 日均线之上
+另给近 1 周、4 周、13 周（5、20、60 个交易日）的涨跌幅，方便和沪深 300（000300.SH）比强弱。
+
 每周排了两次：周五傍晚一次，周六凌晨补一次。
   - 最新交易日的日线 baostock 还没入库时，本次直接跳过，不写文件，留给下一次。
   - 定时运行时，如果 data/meta.json 已经是最新交易日且成功率达标，直接跳过。
@@ -45,6 +52,21 @@ def classify(close, ma50, ma200):
     if close < ma200 and ma50 < ma200:
         return "破位"
     return "震荡"
+
+
+def direction(close, ma50, ma200):
+    if ma200 is None or ma50 is None:
+        return "数据不足"
+    if ma50 > ma200:
+        return "上涨" if close >= ma50 else "上涨中回调"
+    return "下跌" if close <= ma50 else "下跌中反弹"
+
+
+def change(closes, n):
+    """最近 n 个交易日的涨跌幅（%），数据不够返回空。"""
+    if len(closes) <= n or not closes[-1 - n]:
+        return ""
+    return round((closes[-1] / closes[-1 - n] - 1) * 100, 2)
 
 
 def summarize(closes):
@@ -155,6 +177,10 @@ def main():
                 "status": classify(close, ma50, ma200),
                 "high_250": round(high, 3),
                 "pct_from_high": round(dd, 2) if dd is not None else "",
+                "trend": direction(close, ma50, ma200),
+                "chg_1w": change(closes, 5),
+                "chg_4w": change(closes, 20),
+                "chg_13w": change(closes, 60),
             })
             if i % 500 == 0:
                 print(f"{i}/{len(universe)}", flush=True)
@@ -162,7 +188,8 @@ def main():
         bs.logout()
 
     out_rows.sort(key=lambda r: r["code"])
-    fields = ["code", "name", "kind", "date", "close", "ma50", "ma200", "status", "high_250", "pct_from_high"]
+    fields = ["code", "name", "kind", "date", "close", "ma50", "ma200", "status", "high_250", "pct_from_high",
+              "trend", "chg_1w", "chg_4w", "chg_13w"]
     with open(os.path.join(OUT_DIR, "ma_latest.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
@@ -177,6 +204,7 @@ def main():
         "ok": len(out_rows),
         "failed": len(failures),
         "failed_sample": failures[:20],
+        "columns": fields,
     }
     with open(os.path.join(OUT_DIR, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
